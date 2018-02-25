@@ -20,6 +20,7 @@ import android.support.v7.widget.ShareActionProvider;
 import android.support.v7.widget.Toolbar;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.view.View;
 
 import com.afollestad.materialdialogs.MaterialDialog;
 import com.mikepenz.google_material_typeface_library.GoogleMaterial;
@@ -73,8 +74,7 @@ public class ProductActivity extends BaseActivity {
 
         tabLayout.setupWithViewPager(viewPager);
 
-        Intent intent = getIntent();
-        mState = (State) intent.getExtras().getSerializable("state");
+        mState = (State) getIntent().getExtras().getSerializable("state");
 
         Product product = mState.getProduct();
 
@@ -105,24 +105,30 @@ public class ProductActivity extends BaseActivity {
                             .sizeDp(24))
                     .show();
         }
+
+        if (!Utils.isHardwareCameraInstalled(this)){
+            mButtonScan.setVisibility(View.GONE);
+        }
     }
 
     @OnClick(R.id.buttonScan)
     protected void OnScan() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            if (ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.CAMERA)) {
-                new MaterialDialog.Builder(this)
-                        .title(R.string.action_about)
-                        .content(R.string.permission_camera)
-                        .neutralText(R.string.txtOk)
-                        .onNeutral((dialog, which) -> ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.CAMERA}, Utils.MY_PERMISSIONS_REQUEST_CAMERA))
-                        .show();
+        if (Utils.isHardwareCameraInstalled(this)) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                if (ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.CAMERA)) {
+                    new MaterialDialog.Builder(this)
+                            .title(R.string.action_about)
+                            .content(R.string.permission_camera)
+                            .neutralText(R.string.txtOk)
+                            .onNeutral((dialog, which) -> ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.CAMERA}, Utils.MY_PERMISSIONS_REQUEST_CAMERA))
+                            .show();
+                } else {
+                    ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.CAMERA}, Utils.MY_PERMISSIONS_REQUEST_CAMERA);
+                }
             } else {
-                ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.CAMERA}, Utils.MY_PERMISSIONS_REQUEST_CAMERA);
+                Intent intent = new Intent(this, ScannerFragmentActivity.class);
+                startActivity(intent);
             }
-        } else {
-            Intent intent = new Intent(this, ScannerFragmentActivity.class);
-            startActivity(intent);
         }
     }
 
@@ -150,6 +156,19 @@ public class ProductActivity extends BaseActivity {
             case android.R.id.home:
                 NavUtils.navigateUpFromSameTask(this);
                 return true;
+
+            case R.id.menu_item_share:
+                String shareUrl = " " + getString(R.string.website_product) + mState.getProduct().getCode();
+                Intent sharingIntent = new Intent();
+                sharingIntent.setAction(Intent.ACTION_SEND);
+                sharingIntent.setType("text/plain");
+                String shareBody = getResources().getString(R.string.msg_share) + shareUrl;
+                String shareSub = "\n\n";
+                sharingIntent.putExtra(android.content.Intent.EXTRA_SUBJECT, shareSub);
+                sharingIntent.putExtra(android.content.Intent.EXTRA_TEXT, shareBody);
+                startActivity(Intent.createChooser(sharingIntent, "Share using"));
+                return true;
+
             case R.id.action_edit_product:
                 String url = getString(R.string.website) + "cgi/product.pl?type=edit&code=" + mState.getProduct().getCode();
                 if (mState.getProduct().getUrl() != null) {
@@ -168,17 +187,17 @@ public class ProductActivity extends BaseActivity {
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
         getMenuInflater().inflate(R.menu.menu_product, menu);
-        MenuItem item = menu.findItem(R.id.menu_item_share);
-        mShareActionProvider = (ShareActionProvider) MenuItemCompat.getActionProvider(item);
-
-        Intent shareIntent = new Intent(Intent.ACTION_SEND);
-        String url = " " + getString(R.string.website_product) + mState.getProduct().getCode();
-        if (mState.getProduct().getUrl() != null) {
-            url = " " + mState.getProduct().getUrl();
-        }
-        shareIntent.putExtra(Intent.EXTRA_TEXT, getResources().getString(R.string.msg_share) + url);
-        shareIntent.setType("text/plain");
-        setShareIntent(shareIntent);
+//        MenuItem item = menu.findItem(R.id.menu_item_share);
+//        mShareActionProvider = (ShareActionProvider) MenuItemCompat.getActionProvider(item);
+//
+//        Intent shareIntent = new Intent(Intent.ACTION_SEND);
+//        String url = " " + getString(R.string.website_product) + mState.getProduct().getCode();
+//        if (mState.getProduct().getUrl() != null) {
+//            url = " " + mState.getProduct().getUrl();
+//        }
+//        shareIntent.putExtra(Intent.EXTRA_TEXT, getResources().getString(R.string.msg_share) + url);
+//        shareIntent.setType("text/plain");
+//        setShareIntent(shareIntent);
 
         return true;
     }

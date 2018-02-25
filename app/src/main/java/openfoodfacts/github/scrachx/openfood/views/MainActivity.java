@@ -24,7 +24,9 @@ import android.support.v7.widget.Toolbar;
 import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.widget.Toast;
 
+import com.afollestad.materialdialogs.DialogAction;
 import com.afollestad.materialdialogs.MaterialDialog;
 import com.mikepenz.fastadapter.commons.utils.RecyclerViewCacheUtil;
 import com.mikepenz.google_material_typeface_library.GoogleMaterial;
@@ -61,15 +63,18 @@ import static org.apache.commons.lang3.StringUtils.isNotEmpty;
 
 public class MainActivity extends BaseActivity implements CustomTabActivityHelper.ConnectionCallback {
 
-    private static final int LOGIN_REQUEST = 1;
     public static final int USER_PROFILE = 100;
+    public static final int LOGIN_ID = 6;
+    private static final int LOGIN_REQUEST = 1;
     private static final long PROFILE_SETTING = 200;
     private static final int CONTRIBUTOR = 300;
     private static final int LOGOUT = 400;
-    public static final int LOGIN_ID = 6;
     private static final long USER_ID = 500;
     private static final int ABOUT = 600;
     private static final int CONTRIBUTE = 700;
+    private static final String CONTRIBUTIONS_SHORTCUT = "CONTRIBUTIONS";
+    private static final String SCAN_SHORTCUT = "SCAN";
+    private static final String BARCODE_SHORTCUT = "BARCODE";
 
     @BindView(R.id.toolbar)
     Toolbar toolbar;
@@ -91,7 +96,7 @@ public class MainActivity extends BaseActivity implements CustomTabActivityHelpe
 
         Utils.hideKeyboard(this);
 
-        final IProfile profile = getUserProfile();
+        final IProfile<ProfileDrawerItem> profile = getUserProfile();
         LocaleHelper.setLocale(this, LocaleHelper.getLanguage(this));
 
         setSupportActionBar(toolbar);
@@ -190,20 +195,7 @@ public class MainActivity extends BaseActivity implements CustomTabActivityHelpe
                             startActivity(CategoryActivity.getIntent(this));
                             break;
                         case 4:
-                            if (ContextCompat.checkSelfPermission(MainActivity.this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-                                if (ActivityCompat.shouldShowRequestPermissionRationale(MainActivity.this, Manifest.permission.CAMERA)) {
-                                    new MaterialDialog.Builder(MainActivity.this)
-                                            .title(R.string.action_about)
-                                            .content(R.string.permission_camera)
-                                            .neutralText(R.string.txtOk)
-                                            .show();
-                                } else {
-                                    ActivityCompat.requestPermissions(MainActivity.this, new String[]{Manifest.permission.CAMERA}, Utils.MY_PERMISSIONS_REQUEST_CAMERA);
-                                }
-                            } else {
-                                Intent intent = new Intent(MainActivity.this, ScannerFragmentActivity.class);
-                                startActivity(intent);
-                            }
+                            scan();
                             break;
                         case 5:
                             startActivity(new Intent(MainActivity.this, HistoryScanActivity.class));
@@ -243,23 +235,27 @@ public class MainActivity extends BaseActivity implements CustomTabActivityHelpe
                             }
                             break;
                         case CONTRIBUTOR:
-                            SharedPreferences preferences1 = getSharedPreferences("login", 0);
-                            String userLogin1 = preferences1.getString("user", null);
-                            userContributeUri = Uri.parse(getString(R.string.website_contributor) + userLogin1);
-                            if (isNotEmpty(userLogin1)) {
-                                CustomTabActivityHelper.openCustomTab(MainActivity.this, customTabsIntent, userContributeUri, new WebViewFallback());
-                            } else {
-                                new MaterialDialog.Builder(MainActivity.this)
-                                        .title(R.string.contribute)
-                                        .content(R.string.contribution_without_account)
-                                        .positiveText(R.string.txtOk)
-                                        .negativeText(R.string.cancel_button)
-                                        .onPositive((dialog, which) -> CustomTabActivityHelper.openCustomTab(MainActivity.this, customTabsIntent, Uri.parse(getString(R.string.website) + "cgi/user.pl"), new WebViewFallback()))
-                                        .show();
-                            }
+                            myContributions();
                             break;
                         case LOGOUT:
-                            logout();
+                            new MaterialDialog.Builder(MainActivity.this)
+                                    .title("Confirm Logout")
+                                    .content("Are you sure to log out ?")
+                                    .positiveText(R.string.txtOk)
+                                    .negativeText("Cancel")
+                                    .onPositive(new MaterialDialog.SingleButtonCallback() {
+                                        @Override
+                                        public void onClick(MaterialDialog dialog, DialogAction which) {
+                                            logout();
+                                        }
+                                    })
+                                    .onNegative(new MaterialDialog.SingleButtonCallback() {
+                                        @Override
+                                        public void onClick(MaterialDialog dialog, DialogAction which) {
+                                            Toast.makeText(getApplicationContext(), "Cancelled",
+                                                    Toast.LENGTH_SHORT).show();
+                                        }
+                                    }).show();
                             break;
                         default:
                             // nothing to do
@@ -287,10 +283,17 @@ public class MainActivity extends BaseActivity implements CustomTabActivityHelpe
             result.removeItem(7);
             result.updateName(11, new StringHolder(getString(R.string.open_food_drawer)));
         }
+
         if (BuildConfig.FLAVOR.equals("opff")) {
             result.removeItem(7);
             result.updateName(11, new StringHolder(getString(R.string.open_food_drawer)));
         }
+
+        // Remove scan item if the device does not have a camera, for example, Chromebooks or Fire devices
+        if (!Utils.isHardwareCameraInstalled(this)) {
+            result.removeItem(4);
+        }
+
 
         //if you have many different types of DrawerItems you can magically pre-cache those items to get a better scroll performance
         //make sure to init the cache after the DrawerBuilder was created as this will first clear the cache to make sure no old elements are in
@@ -320,9 +323,62 @@ public class MainActivity extends BaseActivity implements CustomTabActivityHelpe
         customTabActivityHelper.mayLaunchUrl(contributeUri, null, null);
         customTabActivityHelper.mayLaunchUrl(discoverUri, null, null);
         customTabActivityHelper.mayLaunchUrl(userContributeUri, null, null);
+
+        if (CONTRIBUTIONS_SHORTCUT.equals(getIntent().getAction())) {
+            myContributions();
+        }
+
+        if (SCAN_SHORTCUT.equals(getIntent().getAction())) {
+            scan();
+        }
+
+        if (BARCODE_SHORTCUT.equals(getIntent().getAction())) {
+            moveToBarcodeEntry();
+        }
     }
 
-    private IProfile getProfileSettingDrawerItem() {
+    private void scan() {
+        if (ContextCompat.checkSelfPermission(MainActivity.this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            if (ActivityCompat.shouldShowRequestPermissionRationale(MainActivity.this, Manifest.permission.CAMERA)) {
+                new MaterialDialog.Builder(MainActivity.this)
+                        .title(R.string.action_about)
+                        .content(R.string.permission_camera)
+                        .neutralText(R.string.txtOk)
+                        .show();
+            } else {
+                ActivityCompat.requestPermissions(MainActivity.this, new String[]{Manifest.permission.CAMERA}, Utils.MY_PERMISSIONS_REQUEST_CAMERA);
+            }
+        } else {
+            Intent intent = new Intent(MainActivity.this, ScannerFragmentActivity.class);
+            startActivity(intent);
+        }
+    }
+
+    private void myContributions() {
+        SharedPreferences preferences1 = getSharedPreferences("login", 0);
+        String userLogin1 = preferences1.getString("user", null);
+        userContributeUri = Uri.parse(getString(R.string.website_contributor) + userLogin1);
+        if (isNotEmpty(userLogin1)) {
+            CustomTabActivityHelper.openCustomTab(MainActivity.this, customTabsIntent, userContributeUri, new WebViewFallback());
+        } else {
+            new MaterialDialog.Builder(MainActivity.this)
+                    .title(R.string.contribute)
+                    .content(R.string.contribution_without_account)
+                    .positiveText(R.string.create_account_button)
+                    .negativeText(R.string.cancel_button)
+                    .neutralText(R.string.login_button)
+                    .onPositive((dialog, which) -> CustomTabActivityHelper.openCustomTab(MainActivity.this, customTabsIntent, Uri.parse(getString(R.string.website) + "cgi/user.pl"), new WebViewFallback()))
+                    .onNeutral((dialog, which) -> startActivityForResult(new Intent(MainActivity.this, LoginActivity.class), LOGIN_REQUEST))
+                    .show();
+        }
+    }
+
+    private IProfile<ProfileSettingDrawerItem> getProfileSettingDrawerItem() {
+        SharedPreferences preferences = getSharedPreferences("login", 0);
+        String userLogin = preferences.getString("user", null);
+        String userSession = preferences.getString("user_session", null);
+        userAccountUri = Uri.parse(getString(R.string.website) + "cgi/user.pl?type=edit&userid=" + userLogin + "&user_id=" + userLogin + "&user_session=" + userSession);
+        customTabActivityHelper.mayLaunchUrl(userAccountUri, null, null);
         return new ProfileSettingDrawerItem()
                 .withName(getString(R.string.action_manage_account))
                 .withIcon(GoogleMaterial.Icon.gmd_settings)
@@ -336,11 +392,9 @@ public class MainActivity extends BaseActivity implements CustomTabActivityHelpe
      * Remove user login info
      */
     private void logout() {
-        getSharedPreferences("login", 0).edit().clear().apply();
-
+        getSharedPreferences("login", 0).edit().clear().commit();
         headerResult.removeProfileByIdentifier(PROFILE_SETTING);
-        headerResult.setActiveProfile(getUserProfile());
-
+        headerResult.updateProfile(getUserProfile());
         result.addItemAtPosition(getLoginDrawerItem(), result.getPosition(CONTRIBUTOR));
         result.removeItem(LOGOUT);
     }
@@ -352,7 +406,7 @@ public class MainActivity extends BaseActivity implements CustomTabActivityHelpe
                 if (resultCode == RESULT_OK) {
                     result.removeItem(LOGIN_ID);
                     result.addItemsAtPosition(result.getPosition(CONTRIBUTOR), getLogoutDrawerItem());
-                    headerResult.setActiveProfile(getUserProfile());
+                    headerResult.updateProfile(getUserProfile());
                     headerResult.addProfiles(getProfileSettingDrawerItem());
                 }
                 break;
@@ -389,7 +443,9 @@ public class MainActivity extends BaseActivity implements CustomTabActivityHelpe
         SearchManager searchManager = (SearchManager) getSystemService(Context.SEARCH_SERVICE);
         MenuItem searchMenuItem = menu.findItem(R.id.action_search);
         SearchView searchView = (SearchView) searchMenuItem.getActionView();
-        searchView.setSearchableInfo(searchManager.getSearchableInfo(getComponentName()));
+        if (searchManager != null) {
+            searchView.setSearchableInfo(searchManager.getSearchableInfo(getComponentName()));
+        }
 
         MenuItemCompat.setOnActionExpandListener(searchMenuItem, new MenuItemCompat.OnActionExpandListener() {
             @Override
@@ -444,21 +500,21 @@ public class MainActivity extends BaseActivity implements CustomTabActivityHelpe
         }
     }
 
-    private IDrawerItem getLogoutDrawerItem() {
+    private IDrawerItem<PrimaryDrawerItem, com.mikepenz.materialdrawer.model.AbstractBadgeableDrawerItem.ViewHolder> getLogoutDrawerItem() {
         return new PrimaryDrawerItem()
                 .withName(getString(R.string.logout_drawer))
                 .withIcon(GoogleMaterial.Icon.gmd_settings_power)
                 .withIdentifier(LOGOUT);
     }
 
-    private IDrawerItem getLoginDrawerItem() {
+    private IDrawerItem<PrimaryDrawerItem, com.mikepenz.materialdrawer.model.AbstractBadgeableDrawerItem.ViewHolder> getLoginDrawerItem() {
         return new PrimaryDrawerItem()
                 .withName(R.string.sign_in_drawer)
                 .withIcon(GoogleMaterial.Icon.gmd_account_circle)
                 .withIdentifier(LOGIN_ID);
     }
 
-    private IProfile getUserProfile() {
+    private IProfile<ProfileDrawerItem> getUserProfile() {
         String userLogin = getSharedPreferences("login", 0)
                 .getString("user", getResources().getString(R.string.txt_anonymous));
 
@@ -508,11 +564,24 @@ public class MainActivity extends BaseActivity implements CustomTabActivityHelpe
             Bundle args = new Bundle();
             args.putString("query", query);
             newFragment.setArguments(args);
-
             transaction.replace(R.id.fragment_container, newFragment);
-            transaction.addToBackStack(null);
             transaction.commit();
         }
     }
 
+    /**
+     * This moves the main activity to the barcode entry fragment.
+     */
+    public void moveToBarcodeEntry() {
+        result.setSelection(2);
+        Fragment fragment = new FindProductFragment();
+        getSupportActionBar().setTitle(getResources().getString(R.string.search_by_barcode_drawer));
+
+        if (fragment != null) {
+            getSupportFragmentManager().beginTransaction().replace(R.id.fragment_container, fragment).commit();
+        } else {
+            // error in creating fragment
+            Log.e("MainActivity", "Error in creating fragment");
+        }
+    }
 }

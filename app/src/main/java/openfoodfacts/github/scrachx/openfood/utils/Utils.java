@@ -10,8 +10,8 @@ import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.support.annotation.DrawableRes;
-import android.support.graphics.drawable.VectorDrawableCompat;
 import android.support.v4.content.ContextCompat;
+import android.support.v7.content.res.AppCompatResources;
 import android.text.Spannable;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
@@ -26,8 +26,15 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.util.Collections;
 import java.util.Locale;
+import java.util.concurrent.TimeUnit;
 
+import okhttp3.CipherSuite;
+import okhttp3.ConnectionSpec;
+import okhttp3.OkHttpClient;
+import okhttp3.TlsVersion;
+import openfoodfacts.github.scrachx.openfood.BuildConfig;
 import openfoodfacts.github.scrachx.openfood.R;
 import openfoodfacts.github.scrachx.openfood.models.DaoSession;
 import openfoodfacts.github.scrachx.openfood.views.OFFApplication;
@@ -37,16 +44,15 @@ import static android.text.TextUtils.isEmpty;
 public class Utils {
 
     public static final int MY_PERMISSIONS_REQUEST_CAMERA = 1;
-    public static final int MY_PERMISSIONS_REQUEST_STORAGE= 2;
+    public static final int MY_PERMISSIONS_REQUEST_STORAGE = 2;
 
     /**
      * Returns a CharSequence that concatenates the specified array of CharSequence
      * objects and then applies a list of zero or more tags to the entire range.
      *
      * @param content an array of character sequences to apply a style to
-     * @param tags the styled span objects to apply to the content
-     *        such as android.text.style.StyleSpan
-     *
+     * @param tags    the styled span objects to apply to the content
+     *                such as android.text.style.StyleSpan
      */
     private static CharSequence apply(CharSequence[] content, Object... tags) {
         SpannableStringBuilder text = new SpannableStringBuilder();
@@ -169,21 +175,19 @@ public class Utils {
     /**
      * Check if a certain application is installed on a device.
      *
-     * @param context the applications context.
+     * @param context     the applications context.
      * @param packageName the package name that you want to check.
-     *
      * @return true if the application is installed, false otherwise.
      */
 
     public static boolean isApplicationInstalled(Context context, String packageName) {
-    //private boolean isApplicationInstalled(Context context, String packageName) {
+        //private boolean isApplicationInstalled(Context context, String packageName) {
         PackageManager pm = context.getPackageManager();
         try {
             // Check if the package name exists, if exception is thrown, package name does not exist.
             pm.getPackageInfo(packageName, PackageManager.GET_ACTIVITIES);
             return true;
-        }
-        catch (PackageManager.NameNotFoundException e) {
+        } catch (PackageManager.NameNotFoundException e) {
             return false;
         }
     }
@@ -195,7 +199,7 @@ public class Utils {
             return R.drawable.ic_error;
         }
 
-        switch (grade.toLowerCase()) {
+        switch (grade.toLowerCase(Locale.getDefault())) {
             case "a":
                 drawable = R.drawable.nnc_a;
                 break;
@@ -220,7 +224,7 @@ public class Utils {
     }
 
     public static Bitmap getBitmapFromDrawable(Context context, @DrawableRes int drawableId) {
-        Drawable drawable = VectorDrawableCompat.create(context.getResources(), drawableId, null);
+        Drawable drawable = AppCompatResources.getDrawable(context, drawableId);
         Bitmap bitmap = Bitmap.createBitmap(drawable.getIntrinsicWidth(), drawable.getIntrinsicHeight(), Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(bitmap);
         drawable.setBounds(0, 0, canvas.getWidth(), canvas.getHeight());
@@ -249,10 +253,52 @@ public class Utils {
             return value;
         }
 
-        return  String.format(Locale.getDefault(), "%.2f", Double.valueOf(value));
+        return String.format(Locale.getDefault(), "%.2f", Double.valueOf(value));
     }
 
     public static DaoSession getAppDaoSession(Activity activity) {
         return ((OFFApplication) activity.getApplication()).getDaoSession();
+    }
+
+    /**
+     * Check if the device has a camera installed.
+     *
+     * @return true if installed, false otherwise.
+     */
+    public static boolean isHardwareCameraInstalled(Context context) {
+        try {
+            if (context.getPackageManager().hasSystemFeature(PackageManager.FEATURE_CAMERA)) {
+                return true;
+            }
+        } catch (NullPointerException e) {
+            if (BuildConfig.DEBUG) Log.i(context.getClass().getSimpleName(), e.toString());
+            return false;
+        }
+        return false;
+    }
+
+
+    public static OkHttpClient HttpClientBuilder() {
+        OkHttpClient httpClient;
+        if (Build.VERSION.SDK_INT == 24) {
+            ConnectionSpec spec = new ConnectionSpec.Builder(ConnectionSpec.MODERN_TLS)
+                    .tlsVersions(TlsVersion.TLS_1_2)
+                    .cipherSuites(CipherSuite.TLS_DHE_RSA_WITH_AES_128_GCM_SHA256)
+                    .build();
+
+            httpClient = new OkHttpClient.Builder()
+                    .connectTimeout(5000, TimeUnit.MILLISECONDS)
+                    .readTimeout(30000, TimeUnit.MILLISECONDS)
+                    .writeTimeout(30000, TimeUnit.MILLISECONDS)
+                    .connectionSpecs(Collections.singletonList(spec))
+                    .build();
+        } else {
+            httpClient = new OkHttpClient.Builder()
+                    .connectTimeout(5000, TimeUnit.MILLISECONDS)
+                    .readTimeout(30000, TimeUnit.MILLISECONDS)
+                    .writeTimeout(30000, TimeUnit.MILLISECONDS)
+                    .build();
+        }
+        return httpClient;
     }
 }
